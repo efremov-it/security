@@ -1,0 +1,37 @@
+# ZAP https://www.zaproxy.org/docs/docker/about/
+services:
+  postman:
+    image: postman/newman
+    container_name: postman
+    ports:
+      - "5800:5800"  # GUI в браузере будет по http://localhost:5800
+    volumes:
+      - ./postman/config:/config:rw
+      - ./postman/data:/data:rw
+    environment:
+      - TZ=Europe/Moscow  # Или замени на свой часовой пояс
+    restart: unless-stopped
+  zap:
+    image: zaproxy/zap-stable:2.16.1
+    container_name: zap
+    environment:
+      DISPLAY: $DISPLAY
+    network_mode: "host"
+    ports:
+      - "8089:8089"  # ZAP's proxy port
+      - "8090:8090"  # ZAP's API port
+    volumes:
+      - ./zap/scripts:/home/zap/.ZAP/scripts
+      - ./zap/configs:/home/zap/.ZAP_D/configs
+      - ./zap/reports:/home/zap/.ZAP_D/reports
+      - ./zap/data:/home/zap/.ZAP_D/data
+      - /tmp/.X11-unix:/tmp/.X11-unix
+    command: >
+      zap.sh -addoninstall accessControl -addoninstall ascanrulesBeta -addoninstall ascanrulesAlpha -addoninstall pscanrulesBeta -addoninstall domxss -addoninstall graphql -addoninstall openapi -addoninstall pscanrulesAlpha -addoninstall scripts -addoninstall accessControl communityScripts -port 8089 -host 0.0.0.0 -config api.addrs.addr.name=.* -config api.addrs.addr.regex=true -config api.disablekey=true
+#-daemon -port 8090 -host 0.0.0.0 -config api.addrs.addr.name=.* -config api.addrs.addr.regex=true -config api.disablekey=true
+# zap.sh -daemon -host 0.0.0.0 -port 8089 -config api.disablekey=true
+# addOns -addoninstall pscanrulesBeta -addoninstall ascanrulesAlpha -addoninstall domxss -addoninstall graphql -addoninstall openapi -addoninstall pscanrulesAlpha -addoninstall scripts -addoninstall accessControl communityScripts
+
+
+
+      # docker run -v $(pwd):/zap/wrk/:rw -t owasp/zap2docker-stable zap.sh -cmd -addoninstall accessControl,advancedSQLInjection,advancedXSS,ascanrulesAlpha,ascanrulesBeta -autorun /zap/wrk/juice_shop_2fa.yaml

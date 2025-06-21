@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: the secureCodeBox authors
+#
+# SPDX-License-Identifier: Apache-2.0
+
+labels:
+  - name: breaking
+    labeled:
+      pr:
+        body: |
+          This pull request includes breaking changes. **Please make sure that you included the breaking changes and the steps required to upgrade in [Upgrading](https://www.securecodebox.io/docs/getting-started/upgrading)**. 
+          :sparkles: Thank you for your contribution! :sparkles:

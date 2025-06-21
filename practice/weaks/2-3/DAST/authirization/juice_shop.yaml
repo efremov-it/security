@@ -1,0 +1,102 @@
+env:
+  contexts:
+  - name: juice_shop
+    urls:
+    - http://localhost:3000
+    includePaths:
+    - http://localhost:3000/.*
+    excludePaths:
+      - ".*\\.js"
+      - ".*\\.css"
+      - ".*\\.png"
+      - ".*\\.jpeg"
+    authentication:
+      method: form
+      parameters:
+        loginPageUrl: http://localhost:3000/#/login
+        loginRequestUrl: http://localhost:3000/rest/user/login
+        loginRequestBody: "email={%username%}&password={%password%}"
+      verification:
+        method: both
+        loggedInRegex: "logout"
+        loggedOutRegex: "login"
+        pollFrequency: 10
+        pollUnits: seconds
+        pollUrl: http://localhost:3000/rest/user/whoami
+        pollPostData: ""
+    sessionManagement:
+      method: cookie
+    users:
+    - name: juice
+      credentials:
+        username: test@mail.ru
+        password: password01
+
+jobs:
+- type: passiveScan-config
+  parameters: {}
+
+- type: replacer
+  rules:
+  - description: inject auth header
+    matchType: req_header
+    matchString: Authorization
+    matchRegex: false
+    replacementString: "Bearer {{TOKEN}}"
+
+- type: spider
+  parameters:
+    context: juice_shop
+    user: juice
+    url: http://localhost:3000
+    parseDsStore: true
+    maxDuration: 5                   # Int: The max time in minutes the spider will be allowed to run for, default: 0 unlimited
+    maxDepth: 5                      # Int: The maximum tree depth to explore, default 5
+    maxChildren: 10                  # Int: The maximum number of children to add to 
+  tests:
+  - name: At least 100 URLs found
+    type: stats
+    onFail: INFO
+    statistic: automation.spider.urls.added
+    operator: '>='
+    value: 100
+
+- type: spiderAjax
+  parameters:
+    context: juice_shop
+    user: juice
+    url: http://localhost:3000
+  tests:
+  - name: At least 100 AJAX URLs found
+    type: stats
+    onFail: INFO
+    statistic: spiderAjax.urls.added
+    operator: '>='
+    value: 100
+
+- type: passiveScan-wait
+  parameters: {}
+
+- type: activeScan-config
+  parameters:
+    defaultPolicy: "Default Policy"
+    maxScanDurationInMins: 60
+    handleAntiCSRFTokens: true
+    threadPerHost: 5
+- type: activeScan
+  parameters:
+    context: juice_shop
+    user: juice
+  policyDefinition:
+    defaultStrength: high
+    defaultThreshold: low
+
+- type: report
+  parameters:
+    reportTitle: ZAP Full Authenticated Scan
+    template: "traditional-html"
+
+- type: exitStatus
+  parameters:
+    errorLevel: High
+    warnLevel: Medium

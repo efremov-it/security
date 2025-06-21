@@ -1,0 +1,188 @@
+env:
+  contexts:
+  - name: juiceShopContext
+    urls:
+    - http://localhost:3000/
+    includePaths:
+    - http://localhost:3000
+    - http://localhost:3000/.*
+    excludePaths:
+    - .*\.js
+    - .*\.css
+    - .*\.png
+    - .*\.jpeg
+    authentication:
+      method: script
+      parameters:
+        scriptEngine: "ECMAScript : Graal.js"
+        authUrl: http://localhost:3000/rest/user/login
+        script: /home/zap/.ZAP/scripts/authentication/juice_shop.js
+        scriptName: "juice_shop"
+        scriptType: "authentication"
+        scriptDescription: "Juice Shop Auth Script"
+      verification:
+        method: response
+        loggedOutRegex: (Unauthorized)|(token expired)
+        pollFrequency: 60
+        pollUnits: requests
+        pollUrl: ""
+        pollPostData: ""
+    sessionManagement:
+      method: script
+      parameters:
+        scriptEngine: "ECMAScript : Graal.js"
+        script: "/home/zap/.ZAP/scripts/session/juice_shop_session.js" 
+        scriptName: "juice_shop_session"
+        # scriptType: "authentication"
+        scriptDescription: "Juice Shop Auth Script"
+    users:
+    - name: internal-user
+      credentials:
+        username: test@mail.com
+        password: password01
+  parameters: {}
+
+jobs:
+- type: passiveScan-config
+  parameters: {}
+
+# - type: openapi
+#   parameters:
+#     context: juiceShopContext
+#     url: http://localhost:3000/swagger.json
+
+- type: spider
+  parameters:
+    context: juiceShopContext
+    user: internal-user
+    url: http://localhost:3000
+    parseDsStore: true
+    maxDuration: 5                   # Int: The max time in minutes the spider will be allowed to run for, default: 0 unlimited
+    maxDepth: 5                      # Int: The maximum tree depth to explore, default 5
+    maxChildren: 10                  # Int: The maximum number of children to add to 
+  tests:
+  - name: At least 100 URLs found
+    type: stats
+    onFail: INFO
+    statistic: automation.spider.urls.added
+    operator: '>='
+    value: 100
+  - name: No 401 responses
+    type: stats
+    onFail: WARN
+    statistic: responses.401
+    operator: '=='
+    value: 0
+  - name: No 403 responses
+    type: stats
+    onFail: WARN
+    statistic: responses.403
+    operator: '=='
+    value: 0
+
+- type: spiderAjax
+  parameters:
+    context: juiceShopContext
+    user: internal-user
+    url: http://localhost:3000
+    maxDuration: 15
+  tests:
+  - name: At least 100 AJAX URLs found
+    type: stats
+    onFail: INFO
+    statistic: spiderAjax.urls.added
+    operator: '>='
+    value: 100
+
+- type: passiveScan-wait
+  parameters: {}
+
+- type: activeScan-config
+  parameters:
+    defaultPolicy: "Default Policy"
+    maxScanDurationInMins: 60
+    handleAntiCSRFTokens: true
+    threadPerHost: 6
+- type: activeScan
+  parameters:
+    context: juiceShopContext
+    user: internal-user
+  policyDefinition:
+    defaultStrength: high
+    defaultThreshold: low
+  # tests:
+  # - name: No 401 responses
+  #   type: stats
+  #   onFail: WARN
+  #   statistic: responses.401
+  #   operator: '<='
+  #   value: 5
+
+- type: report
+  parameters:
+    theme: original
+    reportDir: /home/zap/.ZAP_D/reports/
+    reportFile: juiceShopHtmlReport
+    reportTitle: ZAP Scanning Report
+  risks:
+  - info
+  - low
+  - medium
+  - high
+  confidences:
+  - falsepositive
+  - low
+  - medium
+  - high
+  - confirmed
+  sections:
+  - siteRiskCounts
+  - responseBody
+  - appendix
+  - alertTypes
+  - responseHeader
+  - alertTypeCounts
+  - riskConfidenceCounts
+  - alerts
+  - aboutThisReport
+  - contents
+  - requestBody
+  - reportDescription
+  - reportParameters
+  - requestHeader
+  - summaries
+- type: report
+  parameters:
+    template: traditional-xml
+    reportDir: /home/zap/.ZAP_D/reports/
+    reportFile: juiceShopXmlReport
+    reportTitle: ZAP Scanning Report
+  risks:
+  - info
+  - low
+  - medium
+  - high
+  confidences:
+  - falsepositive
+  - low
+  - medium
+  - high
+  - confirmed
+- type: exitStatus
+  parameters:
+    errorLevel: High
+    warnLevel: Medium
+
+- type: report
+  parameters:
+    theme: original
+    reportDir: /home/zap/.ZAP_D/reports/
+    reportFile: juiceShopHtmlReport
+    template: traditional-html
+
+- type: report
+  parameters:
+    theme: original
+    reportDir: /home/zap/.ZAP_D/reports/
+    reportFile: juiceShopJsonReport
+    template: traditional-json

@@ -1,0 +1,830 @@
+# SPDX-FileCopyrightText: the secureCodeBox authors
+#
+# SPDX-License-Identifier: Apache-2.0
+
+name: "CI"
+on:
+  push:
+    branches:
+      - main
+      - v[0-9]+.x
+  pull_request:
+
+# The CI runs on ubuntu-22.04; More info about the installed software is found here:
+# https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2204-Readme.md
+
+env:
+  # ---- Language Versions ----
+
+  GO_VERSION: "1.24.2"
+  PYTHON_VERSION: "3.9.16"
+  KIND_NODE_IMAGE: "kindest/node:v1.33.0@sha256:02f73d6ae3f11ad5d543f16736a2cb2a63a300ad60e81dac22099b0b04784a4e"
+  KUBECTL_VERSION: "v1.33.0"
+  KIND_BINARY_VERSION: "v0.27.0"
+  HELM_VERSION: "v3.17.3"
+  HELM_PLUGIN_UNITTEST: "0.5.1"
+
+jobs:
+  test-nodejs-scanner-test-helpers:
+    name: "Unit Test | Node.js Scanner Test Helpers"
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: ".nvmrc"
+
+      - name: Install dependencies
+        working-directory: tests/integration
+        run: |
+          npm ci
+      - name: Test Node.js Scanner Test Helpers
+        working-directory: tests/integration
+        run: |
+          npm run test:helpers
+  k8s-setup:
+    name: "Setup Kind & Kubectl & Helm"
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Kind
+        run: |
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/${{ env.KIND_BINARY_VERSION }}/kind-linux-amd64
+          chmod +x ./kind
+
+      - name: Install Kubectl
+        run: |
+          curl -Lo ./kubectl curl -LO https://dl.k8s.io/release/${{ env.KUBECTL_VERSION }}/bin/linux/amd64/kubectl
+          chmod +x ./kubectl
+
+      - name: Install Helm
+        run: |
+          curl -Lo ./helm.tar.gz https://get.helm.sh/helm-${{ env.HELM_VERSION }}-linux-amd64.tar.gz
+          tar -xzf ./helm.tar.gz
+          chmod +x ./linux-amd64/helm
+
+      - name: Archive Kind
+        uses: actions/upload-artifact@v4
+        with:
+          name: kind
+          path: ./kind
+
+      - name: Archive Kubectl
+        uses: actions/upload-artifact@v4
+        with:
+          name: kubectl
+          path: ./kubectl
+
+      - name: Archive Helm
+        uses: actions/upload-artifact@v4
+        with:
+          name: helm
+          path: ./linux-amd64/helm
+
+  # ---- Unit-Test ----
+
+  # ---- Unit-Test | Java ----
+
+  helm-unit-test:
+    name: "Unit-Test | Helm"
+    runs-on: ubuntu-22.04
+    needs:
+      - k8s-setup
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download Helm
+        uses: actions/download-artifact@v4
+        with:
+          name: helm
+          path: ./helm
+
+      - name: Make binaries globally available
+        run: |
+          chmod +x ./helm/helm && sudo mv ./helm/helm /usr/local/bin/helm
+
+      - name: Verify tools
+        run: |
+          helm version
+
+      - name: Install Helm Unit Test Plugin
+        run: |
+          helm plugin install https://github.com/helm-unittest/helm-unittest.git --version ${{ env.HELM_PLUGIN_UNITTEST }}
+
+      - name: Helm-Chart Unit Tests | Operator
+        working-directory: ./operator
+        run: make helm-unit-tests
+
+      - name: Helm-Chart Unit Tests | AutoDiscovery Cloud AWS
+        working-directory: ./auto-discovery/cloud-aws
+        run: make helm-unit-tests
+
+      - name: Helm-Chart Unit Tests | AutoDiscovery Kubernetes
+        working-directory: ./auto-discovery/kubernetes
+        run: make helm-unit-tests
+
+      - name: Helm-Chart Unit Tests | Hooks
+        working-directory: ./hooks
+        run: make helm-unit-tests
+
+      - name: Helm-Chart Unit Tests | Scanners
+        working-directory: ./scanners
+        run: make helm-unit-tests
+
+      - name: Helm-Chart Unit Tests | Demo-Targets
+        working-directory: ./demo-targets
+        run: make helm-unit-tests
+
+  unit-java:
+    name: "Unit-Test | Java"
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        unit: ["persistence-defectdojo"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Shallow clones should be disabled for a better relevancy of analysis
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin" # required Java distribution
+          java-version: "17" # The JDK version to make available on the path.
+          java-package: jdk # (jre, jdk, or jdk+fx) - defaults to jdk
+          architecture: x64 # (x64 or x86) - defaults to x64
+      - name: Cache SonarCloud packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.sonar/cache
+          key: ${{ runner.os }}-sonar
+          restore-keys: ${{ runner.os }}-sonar
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.gradle/caches
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle') }}
+          restore-keys: ${{ runner.os }}-gradle
+      - name: Build and analyze
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Needed to get PR information, if any
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        working-directory: hooks/${{ matrix.unit }}/hook
+        run: ./gradlew build --info --warning-mode all
+
+  # ---- Build Stage ----
+
+  # ---- Build Stage | Operator & Lurker ----
+
+  operator:
+    name: "Build | Operator"
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        component: ["operator", "lurker"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Go Setup
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Lint Go Code
+        working-directory: ./${{ matrix.component }}
+        run: |
+          go fmt ./...
+          go vet ./...
+
+      - name: Test
+        working-directory: ./operator
+        run: make test
+
+      - name: Build Container Image
+        working-directory: ./operator
+        run: make docker-build
+
+      - name: Export Container Image
+        working-directory: ./operator
+        run: make docker-export-${{ matrix.component }}
+
+      - name: Upload Image As Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.component }}-image
+          path: ./operator/${{ matrix.component }}.tar
+          retention-days: 1
+
+  # ---- Build Stage | AutoDiscovery | Kubernetes ----
+
+  auto-discovery-kubernetes:
+    name: "AutoDiscovery | Kubernetes"
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Go Setup
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Lint Go Code
+        working-directory: ./auto-discovery/kubernetes
+        run: |
+          go fmt ./...
+          go vet ./...
+
+      - name: Test
+        working-directory: ./auto-discovery/kubernetes/
+        run: make test
+
+      - name: Build Container Image
+        working-directory: ./auto-discovery/kubernetes/
+        run: make docker-build
+
+      - name: Export Container Image
+        working-directory: ./auto-discovery/kubernetes/
+        run: make docker-export
+
+      - name: Upload Image As Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: auto-discovery-image
+          path: ./auto-discovery/kubernetes/auto-discovery-kubernetes.tar
+          retention-days: 1
+
+  # ---- Build Stage | AutoDiscovery | Kubernetes | PullSecretExtractor ----
+  auto-discovery-kubernetes-secret-extraction-container:
+    name: "Autodiscovery | Kubernetes | SecretExtractionInitContainer"
+    runs-on: ubuntu-22.04
+    needs:
+      - k8s-setup
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python Version
+        uses: actions/setup-python@v5
+        with:
+          python-version: "${{ env.PYTHON_VERSION }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: ".nvmrc"
+
+      - name: Download Kind
+        uses: actions/download-artifact@v4
+        with:
+          name: kind
+          path: ./kind
+
+      - name: Download Kubectl
+        uses: actions/download-artifact@v4
+        with:
+          name: kubectl
+          path: ./kubectl
+
+      - name: Download Helm
+        uses: actions/download-artifact@v4
+        with:
+          name: helm
+          path: ./helm
+
+      - name: Make binaries globally available
+        run: |
+          chmod +x ./kind/kind && sudo mv ./kind/kind /usr/local/bin/kind
+          chmod +x ./kubectl/kubectl && sudo mv ./kubectl/kubectl /usr/local/bin/kubectl
+          chmod +x ./helm/helm && sudo mv ./helm/helm /usr/local/bin/helm
+
+      - name: Verify tools
+        run: |
+          kind version
+          kubectl version || true
+          helm version
+
+      - name: Unit Tests
+        working-directory: ./auto-discovery/kubernetes/pull-secret-extractor
+        run: make unit-test
+
+      - name: Build Container Image
+        working-directory: ./auto-discovery/kubernetes/pull-secret-extractor
+        run: make docker-build
+
+      - name: Export Container Image
+        working-directory: ./auto-discovery/kubernetes/pull-secret-extractor
+        run: make docker-export
+
+      - name: Upload Image As Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: auto-discovery-pull-secret-extractor
+          path: ./auto-discovery/kubernetes/pull-secret-extractor/auto-discovery-secret-extractor.tar
+          retention-days: 1
+
+      - name: "Start kind cluster"
+        run: |
+          kind version
+          kind create cluster --wait 3m --image "$KIND_NODE_IMAGE"
+
+      - name: "Inspect kind cluster"
+        run: |
+          kubectl config current-context
+          kubectl get node
+
+      - name: "Run integration tests"
+        working-directory: ./auto-discovery/kubernetes/pull-secret-extractor
+        run: |
+          make integration-test
+
+  # ---- Build Stage | AutoDiscovery | Cloud | AWS ----
+  auto-discovery-cloud-aws:
+    name: "AutoDiscovery | Cloud | AWS"
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Go Setup
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Lint Go Code
+        working-directory: ./auto-discovery/cloud-aws
+        run: |
+          go fmt ./...
+          go vet ./...
+
+      - name: Test
+        working-directory: ./auto-discovery/cloud-aws/
+        run: make test
+
+      - name: Build Container Image
+        working-directory: ./auto-discovery/cloud-aws/
+        run: make docker-build
+
+      - name: Export Container Image
+        working-directory: ./auto-discovery/cloud-aws/
+        run: make docker-export
+
+      - name: Upload Image As Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: auto-discovery-cloud-aws-image
+          path: ./auto-discovery/cloud-aws/auto-discovery-cloud-aws.tar
+          retention-days: 1
+
+  # ---- Build Stage | SDK Matrix ----
+
+  sdk:
+    name: "Build | SDKs"
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        sdk:
+          - parser-sdk
+          - hook-sdk
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Image
+        working-directory: ./${{ matrix.sdk }}/nodejs
+        run: make docker-build-sdk
+
+      - name: Export Image
+        working-directory: ./${{ matrix.sdk }}/nodejs
+        run: make docker-export-sdk
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.sdk }}-image
+          path: ./${{ matrix.sdk }}/nodejs/${{ matrix.sdk }}.tar
+          retention-days: 1
+
+  # ---- Test | Scanners ----
+
+  test-scanners:
+    name: "Test |  Scanner ${{ matrix.unit }}"
+    needs:
+      - sdk
+      - operator
+      - k8s-setup
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        unit:
+          - amass
+          - cmseek
+          - ffuf
+          - git-repo-scanner
+          - gitleaks
+          - kube-hunter
+          - ncrack
+          - nikto
+          - nmap
+          - nuclei
+          - screenshooter
+          - semgrep
+          - ssh-audit
+          - sslyze
+          - trivy
+          - trivy-sbom
+          - whatweb
+          - wpscan
+          - zap
+          - zap-advanced
+          - zap-automation-framework
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: ".nvmrc"
+
+      - name: Download Kind
+        uses: actions/download-artifact@v4
+        with:
+          name: kind
+          path: ./kind
+
+      - name: Download Kubectl
+        uses: actions/download-artifact@v4
+        with:
+          name: kubectl
+          path: ./kubectl
+
+      - name: Download Helm
+        uses: actions/download-artifact@v4
+        with:
+          name: helm
+          path: ./helm
+
+      - name: Make binaries globally available
+        run: |
+          chmod +x ./kind/kind && sudo mv ./kind/kind /usr/local/bin/kind
+          chmod +x ./kubectl/kubectl && sudo mv ./kubectl/kubectl /usr/local/bin/kubectl
+          chmod +x ./helm/helm && sudo mv ./helm/helm /usr/local/bin/helm
+
+      - name: Verify tools
+        run: |
+          kind version
+          kubectl version || true
+          helm version
+
+      - name: Install Dependencies
+        working-directory: ./scanners/${{ matrix.unit }}/
+        run: make install-deps
+
+      - name: Unit Tests
+        working-directory: ./scanners/${{ matrix.unit }}/
+        run: make unit-tests
+
+      - name: Download Parser SDK Image
+        uses: actions/download-artifact@v4
+        with:
+          name: parser-sdk-image
+          path: /tmp
+
+      - name: Load Parser SDK Image
+        run: |
+          docker load --input /tmp/parser-sdk.tar
+          docker images | grep sdk
+
+      - name: Build Images
+        working-directory: ./scanners/${{ matrix.unit }}/
+        run: make docker-build
+
+      - name: Export Docker Images
+        working-directory: ./scanners/${{ matrix.unit }}/
+        run: make docker-export
+
+      - name: "Start kind cluster"
+        run: |
+          kind version
+          kind create cluster --wait 3m --image "$KIND_NODE_IMAGE"
+
+      - name: "Inspect kind cluster"
+        run: |
+          kubectl config current-context
+          kubectl get node
+
+      - name: Download Operator Image
+        uses: actions/download-artifact@v4
+        with:
+          name: operator-image
+          path: ./operator
+
+      - name: Download Lurker Image
+        uses: actions/download-artifact@v4
+        with:
+          name: lurker-image
+          path: ./operator
+
+      - name: Import Operator & Lurker Image to kind cluster
+        working-directory: ./operator
+        run: make kind-import
+
+      - name: Kind Import ${{ matrix.unit }} Image to kind cluster
+        working-directory: ./scanners/${{ matrix.unit }}/
+        run: make kind-import
+
+      - name: Deploy Operator Chart to kind cluster
+        working-directory: ./operator
+        run: |
+          make helm-deploy
+
+      - name: Deploy ${{ matrix.unit }} Chart to kind cluster
+        working-directory: ./scanners/${{ matrix.unit }}/
+        run: make deploy
+
+      - name: Deploy Test Dependencies
+        working-directory: ./scanners/${{ matrix.unit }}/
+        run: make deploy-test-deps
+
+      - name: Start Integration Tests
+        working-directory: ./scanners/${{ matrix.unit }}/
+        run: make integration-tests
+
+      # ---- Debuging Cluster on Failure ----
+
+      - name: Inspect Post Failure
+        if: failure()
+        run: |
+          echo "List all 'HelmCharts' in all namespaces"
+          helm list --all-namespaces
+          echo "List all 'Scans' in all namespaces"
+          kubectl get scans -o wide --all-namespaces
+          echo "List all 'Jobs' in all namespaces"
+          kubectl get jobs -o wide --all-namespaces
+          echo "List all 'Pods' in all namespaces"
+          kubectl get pods -o wide --all-namespaces
+          echo "List all 'Services' in all namespaces"
+          kubectl get services -o wide --all-namespaces
+          echo "Describe Pods in 'integration-tests' namespace"
+          kubectl describe pod -n integration-tests
+
+      - name: "Inspect Operator"
+        if: failure()
+        run: |
+          echo "Deployment in namespace 'securecodebox-system'"
+          kubectl -n securecodebox-system get deployments
+          echo "Deployment in namespace 'securecodebox-system'"
+          kubectl -n securecodebox-system get pods
+          echo "Operator Startup Logs"
+          kubectl -n securecodebox-system logs deployment/securecodebox-controller-manager
+
+  # ---- Test | Hooks ----
+
+  test-hooks:
+    name: Test |  Hook ${{ matrix.hook }}
+    needs:
+      - operator
+      - k8s-setup
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        hook:
+          - cascading-scans
+          - generic-webhook
+          - persistence-azure-monitor
+          # - persistence-elastic # Fails on the CI due to insufficient cpu as mentioned in issue #1165
+          - persistence-dependencytrack
+          - update-field-hook
+          - finding-post-processing
+          - notification
+          # - persistence-static-report (WIP)
+    steps:
+      - uses: actions/checkout@master
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: ".nvmrc"
+
+      - name: "Start kind cluster"
+        run: |
+          kind version
+          kind create cluster --wait 3m --image "$KIND_NODE_IMAGE"
+      - name: "Inspect kind cluster"
+        run: |
+          kubectl config current-context
+          kubectl get node
+
+      # ---- Install Operator & Create Namespaces ----
+
+      - name: Download Operator Image
+        uses: actions/download-artifact@v4
+        with:
+          name: operator-image
+          path: ./operator
+
+      - name: Download Lurker Image
+        uses: actions/download-artifact@v4
+        with:
+          name: lurker-image
+          path: ./operator
+
+      - name: Import Operator & Lurker Image
+        working-directory: ./operator
+        run: make kind-import
+
+      - name: "Install Operator"
+        working-directory: ./operator
+        run: make helm-deploy
+
+      # ---- Operator Health Check ----
+
+      - name: "Inspect Operator"
+        run: |
+          echo "Deployment in namespace 'securecodebox-system'"
+          kubectl -n securecodebox-system get deployments
+          echo "Pods in namespace 'securecodebox-system'"
+          kubectl -n securecodebox-system get pods
+          echo "Operator Startup Logs"
+          kubectl -n securecodebox-system logs deployment/securecodebox-controller-manager
+
+      - name: "Create 'demo-targets' namespace"
+        run: "kubectl create namespace demo-targets"
+
+      # ---- Import Parser SDK Artifact
+
+      - name: Download Parser SDK Image
+        uses: actions/download-artifact@v4
+        with:
+          name: parser-sdk-image
+          path: /tmp
+
+      - name: Load Parser SDK Image
+        run: |
+          docker load --input /tmp/parser-sdk.tar
+          docker images | grep sdk
+
+      # ---- Import Hook SDK Artifact
+
+      - name: Download Hook SDK Image
+        uses: actions/download-artifact@v4
+        with:
+          name: hook-sdk-image
+          path: /tmp
+
+      - name: Load Parser SDK Image
+        run: |
+          docker load --input /tmp/hook-sdk.tar
+          docker images | grep sdk
+
+      # ---- K8s Cluster Setup ---- #
+
+      - name: Download Kind
+        uses: actions/download-artifact@v4
+        with:
+          name: kind
+          path: ./kind
+
+      - name: Download Kubectl
+        uses: actions/download-artifact@v4
+        with:
+          name: kubectl
+          path: ./kubectl
+
+      - name: Download Helm
+        uses: actions/download-artifact@v4
+        with:
+          name: helm
+          path: ./helm
+
+      - name: Make binaries globally available
+        run: |
+          chmod +x ./kind/kind && sudo mv ./kind/kind /usr/local/bin/kind
+          chmod +x ./kubectl/kubectl && sudo mv ./kubectl/kubectl /usr/local/bin/kubectl
+          chmod +x ./helm/helm && sudo mv ./helm/helm /usr/local/bin/helm
+
+      - name: Verify tools
+        run: |
+          kind version
+          kubectl version || true
+          helm version
+
+      # ----- Build Test-Scan ScanType Image ----
+
+      - name: Build Images
+        working-directory: ./scanners/test-scan/
+        run: make docker-build
+
+      - name: Export Docker Images
+        working-directory: ./scanners/test-scan/
+        run: make docker-export
+
+      - name: Kind import
+        working-directory: ./scanners/test-scan/
+        run: make kind-import
+
+      - name: Test-scan deploy
+        working-directory: ./scanners/test-scan/
+        run: make deploy
+
+      # ----- Build Hook Image ----
+
+      - name: Build Images
+        working-directory: ./hooks/${{ matrix.hook }}
+        run: make docker-build
+
+      - name: Export Docker Images
+        working-directory: ./hooks/${{ matrix.hook }}
+        run: make docker-export
+
+      - name: Kind import
+        working-directory: ./hooks/${{ matrix.hook }}
+        run: make kind-import
+
+      - name: "Install Test Dependencies"
+        working-directory: ./hooks
+        run: npm ci
+
+      # ---- Unit-Test ----
+
+      - name: "Run Unit Tests"
+        working-directory: ./hooks/${{ matrix.hook }}
+        run: make unit-tests
+
+      # ---- Integration-Test ----
+
+      - name: Deploy ${{ matrix.hook }}
+        working-directory: ./hooks/${{ matrix.hook }}
+        run: make deploy
+
+      - name: Deploy Test Dependencies
+        working-directory: ./hooks/${{ matrix.hook }}
+        run: make deploy-test-deps
+
+      - name: "Run Integration Test"
+        working-directory: ./hooks/${{ matrix.hook }}
+        run: make integration-tests
+
+      # ---- Debuging Cluster on Failure ----
+
+      - name: Inspect Post Failure
+        if: failure()
+        run: |
+          echo "List all 'HelmCharts' in all namespaces"
+          helm list --all-namespaces
+          echo "List all 'Scans' in all namespaces"
+          kubectl get scans -o wide --all-namespaces
+          echo "List all 'Jobs' in all namespaces"
+          kubectl get jobs -o wide --all-namespaces
+          echo "List all 'Pods' in all namespaces"
+          kubectl get pods -o wide --all-namespaces
+          echo "List all 'Services' in all namespaces"
+          kubectl get services -o wide --all-namespaces
+          echo "Describe Pods in 'integration-tests' namespace"
+          kubectl describe pod -n integration-tests
+
+      - name: "Inspect Operator"
+        if: failure()
+        run: |
+          echo "Deployment in namespace 'securecodebox-system'"
+          kubectl -n securecodebox-system get deployments
+          echo "Deployment in namespace 'securecodebox-system'"
+          kubectl -n securecodebox-system get pods
+          echo "Operator Startup Logs"
+          kubectl -n securecodebox-system logs deployment/securecodebox-controller-manager
+
+      - name: Test-scan integration-tests
+        working-directory: ./scanners/test-scan/
+        run: |
+          helm -n integration-tests upgrade --install test-scan . \
+            --set="scanner.image.repository=docker.io/securecodebox/scanner-test-scan" \
+            --set="parser.image.repository=docker.io/securecodebox/parser-test-scan" \
+            --set="parser.image.tag=sha-$(git rev-parse --short HEAD)" \
+            --set="scanner.image.tag=sha-$(git rev-parse --short HEAD)" \
+            --set="parser.env[0].name=CRASH_ON_FAILED_VALIDATION" \
+            --set-string="parser.env[0].value=true"  \
+            --set="parser.env[1].name=PRODUCE_INVALID_FINDINGS" \
+            --set-string="parser.env[1].value=true"
+          make integration-tests
+
+      # ---- Clean UP ----
+
+      - name: "Delete kind cluster"
+        run: |
+          kind delete cluster
+
+  sbctcl-tests:
+    name: "Run sbctcl Tests"
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Run tests
+        working-directory: scbctl
+        run: go test -v ./...

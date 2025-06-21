@@ -1,0 +1,1 @@
+DFD: Пользователь -> API Gateway -> Auth Service -> DB

@@ -1,0 +1,120 @@
+# SPDX-FileCopyrightText: the secureCodeBox authors
+#
+# SPDX-License-Identifier: Apache-2.0
+
+# To get started with Dependabot version updates, you'll need to specify which
+# package ecosystems to update and where the package manifests are located.
+# Please see the documentation for all configuration options:
+# https://docs.github.com/github/administering-a-repository/configuration-options-for-dependency-updates
+
+version: 2
+updates:
+  # NPM Updates for the /documentation directory with docusaurus grouping
+  - package-ecosystem: "npm"
+    directory: "/documentation"
+    schedule:
+      interval: "weekly"
+    groups:
+      docusaurus:
+        applies-to: version-updates
+        patterns:
+          - "docusaurus"
+      npm-security-updates:
+        applies-to: security-updates
+        patterns:
+          - "*"
+      npm-version-updates:
+        applies-to: version-updates
+        patterns:
+          - "*"
+
+  # NPM Updates for all other directories recursively
+  - package-ecosystem: "npm"
+    directories:
+      - "/"
+      - "/auto-discovery/kubernetes/pull-secret-extractor/integration-test"
+      - "/bin"
+      - "/tests/integration"
+      - "/hook-sdk/nodejs"
+      - "/parser-sdk/nodejs"
+      - "/hooks/**"
+      - "/scanners/**"
+    schedule:
+      interval: "weekly"
+    groups:
+      npm-security-updates:
+        applies-to: security-updates
+        patterns:
+          - "*"
+      npm-version-updates:
+        applies-to: version-updates
+        patterns:
+          - "*"
+
+  # Gradle Updates
+  - package-ecosystem: "gradle"
+    directory: "/hooks/persistence-defectdojo/hook"
+    schedule:
+      interval: "weekly"
+    ignore:
+      - dependency-name: "io.kubernetes:client-java:*-legacy"
+      - dependency-name: "io.securecodebox:defectdojo-client:3.0.0"
+    groups:
+      gradle-security-updates:
+        applies-to: security-updates
+        patterns:
+          - "*"
+      gradle-version-updates:
+        applies-to: version-updates
+        patterns:
+          - "*"
+
+  # Docker Updates
+  - package-ecosystem: "docker"
+    directories:
+      - "/"
+      - "**/*"
+    schedule:
+      interval: "weekly"
+    groups:
+      docker-security-updates:
+        applies-to: security-updates
+        patterns:
+          - "*"
+      docker-version-updates:
+        applies-to: version-updates
+        patterns:
+          - "*"
+
+  # GitHub Actions Updates
+  - package-ecosystem: "github-actions"
+    directories:
+      - "/.github/workflows"
+    schedule:
+      interval: "weekly"
+    groups:
+      github-actions-security-updates:
+        applies-to: security-updates
+        patterns:
+          - "*"
+      github-actions-version-updates:
+        applies-to: version-updates
+        patterns:
+          - "*"
+
+  # Helm Chart Updates
+  - package-ecosystem: "helm"
+    directories:
+      - "/operator"
+      - "/hooks/persistence-elastic"
+    schedule:
+      interval: "weekly"
+    groups:
+      helm-security-updates:
+        applies-to: security-updates
+        patterns:
+          - "*"
+      helm-version-updates:
+        applies-to: version-updates
+        patterns:
+          - "*"

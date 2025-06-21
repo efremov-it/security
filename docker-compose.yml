@@ -1,0 +1,15 @@
+services:
+  juice-shop:
+    image: bkimminich/juice-shop
+    environment:
+      NODE_OPTIONS: "--max-old-space-size=12288"
+    ports:
+      - 3000:3000
+  web-dvwa:
+    image: vulnerables/web-dvwa
+    ports:
+      - 8081:80
+  webgoat:
+    image: webgoat/webgoat
+    ports:
+      - 8083:8080
