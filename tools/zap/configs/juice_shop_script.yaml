@@ -16,10 +16,14 @@ env:
       parameters:
         scriptEngine: "ECMAScript : Graal.js"
         authUrl: http://localhost:3000/rest/user/login
-        script: /home/zap/.ZAP/scripts/authentication/juice_shop.js
-        scriptName: "juice_shop"
+        script: /home/zap/.ZAP/scripts/authentication/general_auth.js
+        scriptName: "general_auth"
         scriptType: "authentication"
         scriptDescription: "Juice Shop Auth Script"
+        loginRequestBody: '{"email":"{%username%}","password":"{%password%}"}'
+        tokenPath: authentication.token
+        # выводить токен, или нет
+        debug: "true"
       verification:
         method: response
         loggedOutRegex: (Unauthorized)|(token expired)

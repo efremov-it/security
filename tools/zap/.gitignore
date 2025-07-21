@@ -1,1 +1,3 @@
 reports/*
+configs/test
+configs/zap.yaml

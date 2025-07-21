@@ -1,0 +1,72 @@
+env:
+  contexts:
+    - name: benchmark
+      urls:
+        - https://localhost:8443/benchmark/
+      includePaths:
+        - https://localhost:8443/benchmark/.*
+      sessionManagement:
+        method: cookie
+  parameters:
+    failOnError: false
+    allowUnsafeSSL: true
+
+jobs:
+  - type: passiveScan-config
+    parameters: {}
+
+  - type: spider
+    parameters:
+      context: benchmark
+      url: https://localhost:8443/benchmark/
+      maxDuration: 10
+      maxDepth: 10
+      maxChildren: 1000
+    tests:
+      - name: At least 1000 URLs found
+        type: stats
+        statistic: automation.spider.urls.added
+        operator: '>='
+        value: 1000
+        onFail: INFO
+
+  - type: spiderAjax
+    parameters:
+      context: benchmark
+      url: https://localhost:8443/benchmark/
+      maxDuration: 5
+    tests:
+      - name: At least 500 AJAX URLs found
+        type: stats
+        statistic: spiderAjax.urls.added
+        operator: '>='
+        value: 500
+        onFail: INFO
+
+  - type: passiveScan-wait
+    parameters: {}
+
+  - type: activeScan-config
+    parameters:
+      maxScanDurationInMins: 60
+      handleAntiCSRFTokens: false
+      threadPerHost: 10
+
+  - type: activeScan
+    parameters:
+      context: benchmark
+    policyDefinition:
+      defaultStrength: high
+      defaultThreshold: low
+
+  - type: report
+    parameters:
+      reportTitle: ZAP Full Scan Benchmark
+      template: traditional-json
+      reportDir: /zap/reports
+      reportFile: zap-benchmark-report.json
+
+  - type: exitStatus
+    parameters:
+      errorLevel: High
+      warnLevel: Medium

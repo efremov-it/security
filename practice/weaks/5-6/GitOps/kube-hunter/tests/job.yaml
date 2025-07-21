@@ -1,0 +1,16 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kube-hunter-manual
+  namespace: security
+spec:
+  template:
+    spec:
+      imagePullSecrets:
+        - name: harbor-security
+      containers:
+        - name: kube-hunter
+          image: harbor.registry.com/security-cache/aquasec/kube-hunter:0.6.8
+          command: ["kube-hunter"]
+          args: ["--pod", "--report", "json"]
+      restartPolicy: Never

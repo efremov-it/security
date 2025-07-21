@@ -23,6 +23,11 @@ env:
         scriptDescription: "2FA Authentication Script"
         # otpauth://totp/OWASP%20Juice%20Shop:test@mail.com?secret=NURUMICYHYYCE6KK&issuer=OWASP%20Juice%20Shop
         sharedSecret: NURUMICYHYYCE6KK
+        # TODO: Внедрить функционал
+        loginRequestBody: '{"email":"{%username%}","password":"{%password%}"}'
+        tokenPath: authentication.token
+        # выводить токен, или нет
+        debug: "true"
       verification:
         method: response
         loggedOutRegex: (Unauthorized)|(token expired)

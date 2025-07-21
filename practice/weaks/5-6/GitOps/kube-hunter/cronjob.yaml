@@ -1,0 +1,19 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: kube-hunter
+  namespace: security
+spec:
+  schedule: "0 2 * * 0"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          imagePullSecrets:
+            - name: harbor-security
+          containers:
+          - name: kube-hunter
+            image: harbor.registry.com/security-cache/aquasec/kube-hunter:0.6.8
+            command: ["kube-hunter"]
+            args: ["--pod", "--enable-cve-hunting", "--report", "json"]
+          restartPolicy: OnFailure

@@ -49,10 +49,10 @@ jobs:
 - type: passiveScan-config
   parameters: {}
 
-# - type: openapi
-#   parameters:
-#     context: juiceShopContext
-#     url: http://localhost:3000/swagger.json
+- type: openapi
+  parameters:
+    context: juiceShopContext
+    url: http://localhost:3000/api-docs
 
 - type: spider
   parameters:

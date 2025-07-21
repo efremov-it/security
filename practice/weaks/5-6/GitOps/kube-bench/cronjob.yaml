@@ -1,0 +1,94 @@
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: kube-bench
+  namespace: security
+spec:
+  schedule: "0 1 * * 0" # каждое воскресенье в 1:00
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          hostPID: true
+          affinity:
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchExpressions:
+                      - key: node-role.kubernetes.io/control-plane
+                        operator: Exists
+                  topologyKey: "kubernetes.io/hostname"
+          imagePullSecrets:
+            - name: harbor-security
+          containers:
+            - name: kube-bench
+              image: harbor.registry.com/security-cache/aquasec/kube-bench:v0.11.1
+              securityContext:
+                privileged: true
+              volumeMounts:
+                - mountPath: /etc
+                  name: etc
+                - mountPath: /var
+                  name: var
+              args:
+                - run
+                - --benchmark
+                - rke2-cis-1.24
+                - --skip=4.1.9,4.1.10
+                - --targets=node
+                - --json
+          restartPolicy: Never
+          volumes:
+            - name: etc
+              hostPath:
+                path: /etc
+            - name: var
+              hostPath:
+                path: /var
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: kube-bench-master
+  namespace: security
+spec:
+  schedule: "0 1 * * 0"  # каждое воскресенье в 01:00
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          hostPID: true
+          nodeSelector:
+            node-role.kubernetes.io/control-plane: "true"
+          tolerations:
+            - key: "node-role.kubernetes.io/control-plane"
+              operator: "Exists"
+              effect: "NoSchedule"
+          imagePullSecrets:
+            - name: harbor-security
+          containers:
+            - name: kube-bench
+              image: harbor.registry.com/security-cache/aquasec/kube-bench:v0.11.1
+              securityContext:
+                privileged: true
+              volumeMounts:
+                - mountPath: /etc
+                  name: etc
+                - mountPath: /var
+                  name: var
+              args:
+                - run
+                - --benchmark
+                - rke2-cis-1.24
+                - --skip=1.1.3,1.1.7
+                - --targets=master
+                - --json
+          restartPolicy: Never
+          volumes:  
+            - name: etc
+              hostPath:
+                path: /etc
+            - name: var
+              hostPath:
+                path: /var

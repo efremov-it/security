@@ -27,7 +27,7 @@ services:
       - ./zap/data:/home/zap/.ZAP_D/data
       - /tmp/.X11-unix:/tmp/.X11-unix
     command: >
-      zap.sh -addoninstall accessControl -addoninstall ascanrulesBeta -addoninstall ascanrulesAlpha -addoninstall pscanrulesBeta -addoninstall domxss -addoninstall graphql -addoninstall openapi -addoninstall pscanrulesAlpha -addoninstall scripts -addoninstall accessControl communityScripts -port 8089 -host 0.0.0.0 -config api.addrs.addr.name=.* -config api.addrs.addr.regex=true -config api.disablekey=true
+      zap.sh -addoninstall accessControl -addoninstall ascanrulesBeta -addoninstall ascanrulesAlpha -addoninstall pscanrulesBeta -addoninstall domxss -addoninstall graphql -addoninstall openapi -addoninstall pscanrulesAlpha -addoninstall scripts -addoninstall accessControl communityScripts -port 8089 -host 0.0.0.0 -config api.addrs.addr.name=.* -config api.addrs.addr.regex=true -config api.disablekey=true -config connection.sslAcceptAll=true -config connection.response.body.size=50000000
 #-daemon -port 8090 -host 0.0.0.0 -config api.addrs.addr.name=.* -config api.addrs.addr.regex=true -config api.disablekey=true
 # zap.sh -daemon -host 0.0.0.0 -port 8089 -config api.disablekey=true
 # addOns -addoninstall pscanrulesBeta -addoninstall ascanrulesAlpha -addoninstall domxss -addoninstall graphql -addoninstall openapi -addoninstall pscanrulesAlpha -addoninstall scripts -addoninstall accessControl communityScripts
