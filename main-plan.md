@@ -1,4 +1,4 @@
-Отлично, Александр! Переход из DevOps в DevSecOps — это логичное и востребованное развитие карьеры, особенно с учетом твоего опыта. Ниже приведен подробный **6-месячный план переквалификации в DevSecOps**, включая инструменты, области знаний и примерное время изучения. План сфокусирован на практическом применении и позволяет тебе начать применять DevSecOps-подходы прямо в работе.
+Ниже приведен подробный **6-месячный план переквалификации в DevSecOps**, включая инструменты, области знаний и примерное время изучения. План сфокусирован на практическом применении и позволяет тебе начать применять DevSecOps-подходы прямо в работе.
 
 ---
 
@@ -147,7 +147,3 @@
 | Общая теория | [owasp.org](https://owasp.org), [mitre.org](https://attack.mitre.org), [slsa.dev](https://slsa.dev)                                                      |
 | Практика     | [tryhackme.com](https://tryhackme.com), [hackthebox.com](https://hackthebox.com), [ctflearn.com](https://ctflearn.com)                                   |
 | Обучение     | [practical-devsecops.com](https://www.practical-devsecops.com), [linuxacademy.com](https://linuxacademy.com), [academy.snyk.io](https://academy.snyk.io) |
-
----
-
-Если хочешь — могу создать **трекер задач с чеклистами и дедлайнами** (в формате Notion, Trello или .md-файла). Также могу предложить проекты под портфолио и шаблоны GitLab/GitHub пайплайнов с security-интеграцией.
