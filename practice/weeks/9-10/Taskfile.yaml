@@ -1,0 +1,122 @@
+version: '3'
+
+vars:
+  NAMESPACE: security-demo
+  VAULT_VERSION: "1.17.0"
+  KEYCLOAK_VERSION: "24.0.3"
+
+tasks:
+  start:minikube:
+    desc: Стартует кластер Minikube с необходимыми параметрами
+    cmds:
+      - minikube start --driver=docker --cpus=4 --memory=6g --addons=ingress
+      - minikube addons enable metrics-server
+
+  create:namespace:
+    desc: Create demo namespace
+    cmds:
+      - kubectl create ns {{.NAMESPACE}} || true
+
+  deploy:vault:
+    desc: Deploy Vault in dev mode
+    cmds:
+      - kubectl -n {{.NAMESPACE}} apply -f https://raw.githubusercontent.com/hashicorp/vault-k8s/main/examples/dev/vault-dev.yaml
+      - kubectl -n {{.NAMESPACE}} rollout status deployment/vault
+
+  deploy:keycloak:
+    desc: Deploy Keycloak
+    cmds:
+      - |
+        cat <<EOF | kubectl -n {{.NAMESPACE}} apply -f -
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: keycloak
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: keycloak
+          template:
+            metadata:
+              labels:
+                app: keycloak
+            spec:
+              containers:
+                - name: keycloak
+                  image: quay.io/keycloak/keycloak:{{.KEYCLOAK_VERSION}}
+                  args:
+                    - start-dev
+                    - --hostname-url=http://keycloak.{{.NAMESPACE}}.svc.cluster.local:8080
+                    - --import-realm
+                  env:
+                    - name: KEYCLOAK_ADMIN
+                      value: admin
+                    - name: KEYCLOAK_ADMIN_PASSWORD
+                      value: admin
+                  ports:
+                    - containerPort: 8080
+                  volumeMounts:
+                    - name: realm-volume
+                      mountPath: /opt/keycloak/data/import
+              volumes:
+                - name: realm-volume
+                  configMap:
+                    name: keycloak-realm
+        ---
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: keycloak
+        spec:
+          selector:
+            app: keycloak
+          ports:
+            - port: 8080
+              targetPort: 8080
+        EOF
+
+  configmap:keycloak-realm:
+    desc: Upload custom Keycloak realm config
+    cmds:
+      - kubectl -n {{.NAMESPACE}} create configmap keycloak-realm --from-file=realm.json=./vaultKK/realm.json --dry-run=client -o yaml | kubectl apply -f -
+
+  wait:keycloak:
+    desc: Wait for Keycloak to be ready
+    cmds:
+      - kubectl -n {{.NAMESPACE}} rollout status deployment/keycloak
+
+  portforward:
+    desc: Port forward Vault and Keycloak
+    cmds:
+      - kubectl -n {{.NAMESPACE}} port-forward svc/vault 8200:8200 &
+      - kubectl -n {{.NAMESPACE}} port-forward svc/keycloak 8080:8080 &
+
+  configure:vault:
+    desc: Configure Vault OIDC with Keycloak
+    cmds:
+      - |
+        VAULT_ADDR=http://127.0.0.1:8200 vault auth enable oidc
+        VAULT_ADDR=http://127.0.0.1:8200 vault write auth/oidc/config \
+          oidc_discovery_url="http://keycloak.{{.NAMESPACE}}.svc.cluster.local:8080/realms/demo" \
+          oidc_client_id="vault-client" \
+          oidc_client_secret="myclientsecret" \
+          default_role="demo"
+        VAULT_ADDR=http://127.0.0.1:8200 vault write auth/oidc/role/demo \
+          bound_audiences="vault-client" \
+          allowed_redirect_uris="http://localhost:8250/oidc/callback" \
+          user_claim="preferred_username" \
+          policies="default"
+
+  up:
+    desc: Full cluster setup
+    cmds:
+      - task: start:minikube
+      - task: create:namespace
+      - task: configmap:keycloak-realm
+      - task: deploy:keycloak
+      - task: wait:keycloak
+      - task: deploy:vault
+      - task: portforward
+      - task: configure:vault
+
